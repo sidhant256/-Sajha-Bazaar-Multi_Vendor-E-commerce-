@@ -16,7 +16,7 @@ return new class extends Migration
             $table->foreignId('product_id')->constrained()->cascadeOnDelete();
             $table->string('sku')->unique();
             $table->decimal('price_override', 10, 2)->nullable();
-            $table->json('attributes')->nullable();
+            $table->json('options')->nullable();
             $table->timestamps();
         });
     }
