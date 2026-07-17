@@ -5,6 +5,9 @@ namespace App\Http\Controllers\Auth;
 use App\Enums\UserRole;
 use App\Enums\VendorStatus;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Auth\LoginRequest;
+use App\Http\Requests\Auth\RegisterCustomerRequest;
+use App\Http\Requests\Auth\RegisterVendorRequest;
 use App\Models\User;
 use App\Models\Vendor;
 use Illuminate\Http\Request;
@@ -15,15 +18,9 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
-    public function registerCustomer(Request $request)
+    public function registerCustomer(RegisterCustomerRequest $request)
     {
-        
-    // Validates the incoming request
-        $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
-            'password' => ['required', 'string', 'min:8', 'confirmed'],
-        ]);
+        $validated = $request->validated();
 
         $user = User::create([
             'name' => $validated['name'],
@@ -40,17 +37,10 @@ class AuthController extends Controller
         ], 201);
     }
 
-    public function registerVendor(Request $request)
+    public function registerVendor(RegisterVendorRequest $request)
     {
-        $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
-            'password' => ['required', 'string', 'min:8', 'confirmed'],
-            'store_name' => ['required', 'string', 'max:255'],
-            'description' => ['nullable', 'string'],
-        ]);
+        $validated = $request->validated();
 
-    // Either both User & Vendor succeed, or if anything inside throws an exception, both get rolled back
         $vendor = DB::transaction(function () use ($validated) {
             $user = User::create([
                 'name' => $validated['name'],
@@ -59,12 +49,10 @@ class AuthController extends Controller
                 'role' => UserRole::Vendor,
             ]);
 
-    // Generates a URL-friendly slug from the store name
             $baseSlug = Str::slug($validated['store_name']);
             $slug = $baseSlug;
             $suffix = 1;
 
-    // The while loop handles collisions: if that slug is already taken by another vendor
             while (Vendor::where('slug', $slug)->exists()) {
                 $slug = "{$baseSlug}-{$suffix}";
                 $suffix++;
@@ -78,16 +66,13 @@ class AuthController extends Controller
                 'status' => VendorStatus::Pending,
             ]);
 
-    // manually attaches the $user object to the $vendor model's user relationship in memory
             $vendor->setRelation('user', $user);
 
             return $vendor;
         });
-        
-    // Issues a Sanctum API token for the newly created user 
+
         $token = $vendor->user->createToken($request->userAgent() ?? 'api-token')->plainTextToken;
 
-    // Returns the user, the vendor record, and the token as JSON, with HTTP status 201 Created
         return response()->json([
             'user' => $vendor->user,
             'vendor' => $vendor,
@@ -95,16 +80,12 @@ class AuthController extends Controller
         ], 201);
     }
 
-    public function login(Request $request)
+    public function login(LoginRequest $request)
     {
-        $credentials = $request->validate([
-            'email' => ['required', 'string', 'email'],
-            'password' => ['required', 'string'],
-        ]);
+        $credentials = $request->validated();
 
         $user = User::where('email', $credentials['email'])->first();
 
-    // Hash::check() hashes the submitted plaintext password using the same algorithm and compares it to the stored hash
         if (! $user || ! Hash::check($credentials['password'], $user->password)) {
             throw ValidationException::withMessages([
                 'email' => ['The provided credentials are incorrect.'],
@@ -121,7 +102,6 @@ class AuthController extends Controller
 
     public function logout(Request $request)
     {
-        // Sanctum's logout here is a single-device logout
         $request->user()->currentAccessToken()->delete();
 
         return response()->json(['message' => 'Logged out successfully.']);
